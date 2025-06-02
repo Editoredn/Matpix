@@ -1,0 +1,1917 @@
+classdef app1 < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure            matlab.ui.Figure
+        Label_3             matlab.ui.control.Label
+        Label_2             matlab.ui.control.Label
+        Image5_2            matlab.ui.control.Image
+        Image2              matlab.ui.control.Image
+        MainImage           matlab.ui.control.Image
+        ConnectwithusLabel  matlab.ui.control.Label
+        Image_7             matlab.ui.control.Image
+        Image_6             matlab.ui.control.Image
+        Image_5             matlab.ui.control.Image
+        Image               matlab.ui.control.Image
+        Image_4             matlab.ui.control.Image
+        Image_3             matlab.ui.control.Image
+    end
+
+    
+    properties (Access = private)
+        FilteredImage % this will store the uploaded image uploaded by user
+        UploadButton % Description
+        FilterList = {};      % Cell array of filter images
+        CurrentFilterIndex = 1;   % Tracks center image index
+
+    end
+    
+    methods (Access = private)
+
+
+        
+        function scrollLeft(app)
+    n = numel(app.FilterList);
+    app.CurrentFilterIndex = mod(app.CurrentFilterIndex-2,n)+1;
+    app.updateCarouselDisplay;
+end
+
+function scrollRight(app)
+    n = numel(app.FilterList);
+    app.CurrentFilterIndex = mod(app.CurrentFilterIndex,n)+1;
+    app.updateCarouselDisplay;
+end
+
+
+        function cropImg = applyCrop(app, img)
+            
+   
+            % Step 1: Load colored image
+    % img = imread('your_image.jpg');  % RGB image       % <-- Already passed as argument
+    [m, n, ~] = size(img);           % Get image dimensions
+
+    % Step 2: Show image and let user select crop rectangle
+    figure;
+    imshow(img);
+    title('Drag to select crop area');
+    rect = getrect();  % User drags a rectangle: [x, y, width, height]
+
+    % Step 3: Calculate cropping bounds
+    c1 = round(rect(1));
+    r1 = round(rect(2));
+    c2 = round(rect(1) + rect(3) - 1);
+    r2 = round(rect(2) + rect(4) - 1);
+
+    % Step 4: Make sure the bounds are within image size
+    r1 = max(1, r1); r2 = min(m, r2);
+    c1 = max(1, c1); c2 = min(n, c2);
+
+    % Step 5: Create row selector matrix R
+    R = zeros(r2 - r1 + 1, m);
+    for i = 1:(r2 - r1 + 1)
+        R(i, r1 + i - 1) = 1;
+    end
+
+    % Step 6: Create column selector matrix C
+    C = zeros(n, c2 - c1 + 1);
+    for i = 1:(c2 - c1 + 1)
+        C(c1 + i - 1, i) = 1;
+    end
+
+    % Step 7: Convert to double for operations
+    img = double(img);
+
+    % Step 8: Apply cropping to each RGB channel
+    cropped_R = R * img(:,:,1) * C;
+    cropped_G = R * img(:,:,2) * C;
+    cropped_B = R * img(:,:,3) * C;
+
+    % Step 9: Combine and convert back to uint8
+    cropped_img = cat(3, cropped_R, cropped_G, cropped_B);   % cat = concatenate [ built in function ]
+    cropped_img = uint8(cropped_img);
+
+    
+    cropImg = uint8(cropped_img);
+
+          
+        end
+
+
+        function contrastImg = applyContrast(app, img)
+            
+         
+            % Step 1: Load the image
+    % img = imread('your_image.jpg');   % <-- Already passed as argument
+    img = double(img);  % Convert to double for calculations
+
+    % Step 2: Define contrast and brightness parameters
+    alpha = 1.5;  % Contrast scaling (>1 increases contrast)
+    beta = 30;    % Brightness shift
+
+    % Step 3: Apply linear transformation to each channel
+    adjusted_R = alpha * img(:,:,1) + beta;
+    adjusted_G = alpha * img(:,:,2) + beta;
+    adjusted_B = alpha * img(:,:,3) + beta;
+
+    % Step 4: Clip values to valid range [0, 255]
+    adjusted_R = min(max(adjusted_R, 0), 255);
+    adjusted_G = min(max(adjusted_G, 0), 255);
+    adjusted_B = min(max(adjusted_B, 0), 255);
+
+    % Pixel intensities must stay between 0 and 255.
+    % This line clamps the values to valid image range using:
+    % max(..., 0) to avoid negative pixels,
+    % min(..., 255) to avoid oversaturation.
+
+    % Step 5: Combine adjusted channels and display
+    adjusted_img = cat(3, adjusted_R, adjusted_G, adjusted_B);
+    
+    contrastImg = uint8(adjusted_img);
+          
+        end
+
+
+        
+
+
+        function rotationImg = applyRotation(app ,img)
+    img = im2double(img);  % Convert to double for accuracy
+    [h, w, ~] = size(img);  % Image dimensions
+    center = [w / 2; h / 2];  % Image center
+    currentImg = img;
+
+    % Create popup figure
+    f = figure('Name', 'Rotate Image', ...
+               'NumberTitle', 'off', ...
+               'Position', [400, 200, 600, 500], ...
+               'Resize', 'off');
+
+    % Show image on axes
+    ax = axes('Parent', f, 'Units', 'pixels', 'Position', [100, 130, 400, 340]);
+    imHandle = imshow(currentImg, 'Parent', ax);
+
+    % Rotation slider label
+    uicontrol('Parent', f, 'Style', 'text', 'String', 'Rotation (°)', ...
+              'Position', [150, 70, 100, 20], 'FontSize', 10);
+
+    % Rotation slider
+    rotationSlider = uicontrol('Parent', f, 'Style', 'slider', ...
+        'Min', -180, 'Max', 180, 'Value', 0, ...
+        'Position', [250, 70, 200, 20], ...
+        'Callback', @(src, ~) updateRotation(src.Value));
+
+    % Apply button
+    uicontrol('Parent', f, 'Style', 'pushbutton', 'String', 'Apply Rotation', ...
+              'Position', [250, 20, 120, 30], ...
+              'Callback', @(~, ~) uiresume(f));  % Resume UI when clicked
+
+    % Initial display
+    updateRotation(0);
+    uiwait(f);  % Pause until user presses apply
+
+    % Final rotated image to return
+    rotationImg = uint8(255 * currentImg);  % Convert back to uint8
+
+    close(f);  % Close the popup window
+
+    % --- Nested function to handle rotation preview ---
+    function updateRotation(theta_deg)
+        theta = deg2rad(theta_deg);
+        R = [cos(theta) -sin(theta); sin(theta) cos(theta)];
+
+        % Original image corners
+        corners = [1, w, w, 1;
+                   1, 1, h, h];
+        centered = corners - center;
+        rotated_corners = R * centered;
+        min_xy = floor(min(rotated_corners, [], 2));
+        max_xy = ceil(max(rotated_corners, [], 2));
+        new_size = max_xy - min_xy;
+        new_center = (new_size + 1) / 2;
+
+        [X, Y] = meshgrid(1:new_size(1), 1:new_size(2));
+        coords = [X(:)'; Y(:)'];
+        coords_centered = coords - new_center;
+        coords_rotated = R' * coords_centered;
+        coords_original = coords_rotated + center;
+
+        rotated = zeros(new_size(2), new_size(1), 3);
+        [origX, origY] = meshgrid(1:w, 1:h);
+
+        for ch = 1:3
+            rotated(:,:,ch) = reshape(interp2(origX, origY, img(:,:,ch), ...
+                coords_original(1,:), coords_original(2,:), 'linear', 0), ...
+                new_size(2), new_size(1));
+        end
+
+        currentImg = rotated;
+        set(imHandle, 'CData', currentImg);
+    end
+end
+
+
+
+
+
+
+
+            function flipImg = applyFlip(app, img)
+            
+           
+           img = im2double(img);  % Convert image to double for calculation
+    [h, w, ~] = size(img);  % Get image dimensions
+   current_img = img;
+   % Create GUI window
+   f = figure('Name', 'Image Flipping GUI', 'NumberTitle', 'off', ...
+              'Position', [300, 300, 600, 500]);
+   % Display image
+   ax = axes('Parent', f, 'Position', [0.1, 0.3, 0.8, 0.65]);
+   im_handle = imshow(current_img, 'Parent', ax);
+   % Flip Horizontally Button
+   uicontrol('Style', 'pushbutton', 'String', 'Flip Horizontally', ...
+             'Position', [100, 50, 150, 40], ...
+             'Callback', @flip_horizontal);
+   % Flip Vertically Button
+   uicontrol('Style', 'pushbutton', 'String', 'Flip Vertically', ...
+             'Position', [350, 50, 150, 40], ...
+             'Callback', @flip_vertical);
+
+
+    % Apply button
+    uicontrol('Parent', f, 'Style', 'pushbutton', 'String', 'Apply Rotation', ...
+              'Position', [250, 20, 120, 30], ...
+              'Callback', @(~, ~) uiresume(f));  % Resume UI when clicked
+
+
+    
+   % --- Callback Functions ---
+   function flip_horizontal(~, ~)
+       current_img = current_img(:, end:-1:1, :);  % Reverse columns
+       set(im_handle, 'CData', current_img);      % Update image
+   end
+   function flip_vertical(~, ~)
+       current_img = current_img(end:-1:1, :, :);  % Reverse rows
+       set(im_handle, 'CData', current_img);      % Update image          
+   end
+
+    
+uiwait(f);  % Pause until user presses apply
+
+
+       flipImg = uint8(255*current_img);
+
+   close(f);  % Close the popup window
+
+  
+            end
+
+            
+
+
+
+
+            function scaleImg = applyScaling(app, img)
+            
+          img = double(img)/255;
+
+    [h, w, ~] = size(img);
+
+    f = figure('Name', 'Image Scaling', 'NumberTitle', 'off');
+    ax = axes('Parent', f);
+    im = imshow(img, 'Parent', ax);
+% creates a GUI figure
+
+    % Default scale values
+    scaleX = 1.0;
+    scaleY = 1.0;
+% default bcz we want the image to be original and only change when user do
+
+
+% creating a x axis slider for x axis scaling
+    % UI - X Scale Slider
+    uicontrol('Style', 'text', 'String', 'Scale X', ...
+              'Position', [50, 60, 60, 20]);
+    sliderX = uicontrol('Style', 'slider', ...
+              'Min', 0.1, 'Max', 3.0, 'Value', 1.0, ...
+              'Position', [120, 60, 200, 20], ...
+              'Callback', @(src, event) update_scale());  % this triggers update scale when the slider is moved
+
+
+% creating a y axis slider for y axis scaling
+    % UI - Y Scale Slider
+    uicontrol('Style', 'text', 'String', 'Scale Y', ...
+              'Position', [50, 30, 60, 20]);
+    sliderY = uicontrol('Style', 'slider', ...
+              'Min', 0.1, 'Max', 3.0, 'Value', 1.0, ...
+              'Position', [120, 30, 200, 20], ...
+              'Callback', @(src, event) update_scale());
+
+
+    % Apply button
+    uicontrol('Parent', f, 'Style', 'pushbutton', 'String', 'Apply Rotation', ...
+              'Position', [120, 0, 120, 25], ...
+              'Callback', @(~, ~) uiresume(f));  % Resume UI when clicked
+
+    update_scale();  % Initial display
+% this is used to first show up the image and also ensures that the GUI is not blank, it is req to be displayed first before we use sliders
+
+    function update_scale()
+        scaleX = sliderX.Value;  
+        scaleY = sliderY.Value;
+% this reads slider values
+
+
+        % New size after scaling
+        newW = round(w * scaleX);
+        newH = round(h * scaleY);
+% find the new size after scaling. This tells that how big the image is gonna be in pixels
+
+
+        % Create meshgrid for new image
+        [Xq, Yq] = meshgrid(1:newW, 1:newH);
+
+        % Map new coordinates back to original using inverse scaling
+        Xorig = Xq / scaleX;
+        Yorig = Yq / scaleY;
+% Instead of stretching pixels directly, we find where each new pixel came from in the original image. This is called inverse mapping. This avoids gaps and gives smooth results when usign interpolation
+
+
+
+        % Interpolate each color channel using billinear  interpolation
+        scaled = zeros(newH, newW, 3);  % scaled is the empty image to store the result
+        [origX, origY] = meshgrid(1:w, 1:h);
+
+        for ch = 1:3
+            scaled(:,:,ch) = interp2(origX, origY, img(:,:,ch), ...
+                Xorig, Yorig, 'linear', 0);
+        end
+
+        % Update image
+        set(im, 'CData', scaled);  % replaced old image with new one
+        axis(ax, 'image');
+        drawnow;
+
+% this will reflect changes in live
+    end
+
+
+    uiwait(f);  % Wait until Apply button is clicked
+
+scaleImg = uint8(255 * get(im, 'CData'));  % Convert back to uint8 for consistency
+
+close(f);  % Close the figure
+
+            
+            end
+
+
+
+
+        
+        function grayImg = applyGrayscale(app, img)
+            
+           img = double(img);             % Convert to double for math
+           [M, N, ~] = size(img);         % Get image size
+           grayImg = zeros(M, N);         % Initialize grayscale image
+           weights = [0.2989, 0.5870, 0.1140];  % 1x3 vector
+           for i = 1:M
+             for j = 1:N
+                R = img(i, j, 1);
+                G = img(i, j, 2);
+                B = img(i, j, 3);
+      
+                pixel = [R; G; B];           % 3x1 column vector
+                grayImg(i, j) = weights * pixel;  % Dot product: 1x3 * 3x1
+             end
+           end
+
+          grayImg = uint8(grayImg);           % Convert back to uint8
+          
+        end
+
+
+
+
+        function noiseImg = applyNoise(app, img)
+            
+           
+img = double(img)/255;
+% Resize if needed
+img = imresize(img, [512 512]);   % resizing involves the use of interpolation
+
+n = randn(size(img)); 
+% Multiply the image by the noise
+speckleNoisy = img .* (1 + 0.04 * n);  % 0.04 is the variance (you can adjust it)
+% Step 3: Clamp the values to be within [0, 1] (as image pixel values must be in this range)
+speckleNoisy = max(0, min(1, speckleNoisy));  % Ensure values are between 0 and 1
+
+
+noiseImg = uint8(speckleNoisy*255);
+
+        end
+
+
+
+        function denoiseImg = applyDenoise(app, img)
+          
+img = double(img)/255;
+% Get the size of the image
+[rows, cols, channels] = size(img);
+% Create an empty array for the denoised image
+denoised = zeros(size(img));
+% Loop through each channel (RGB)
+for c = 1:channels
+   % Process each channel separately
+   for i = 2:rows-1  % Start from 2 to avoid boundary issues
+       for j = 2:cols-1  % Start from 2 to avoid boundary issues
+           % Get the 3x3 window around the current pixel
+           window = img(i-1:i+1, j-1:j+1, c);  % 3x3 block of pixels
+           % Find the median value in the window
+           median_value = median(window(:));  % Flatten the window and get the median
+           % Assign the median value to the corresponding pixel
+           denoised(i, j, c) = median_value;
+       end
+   end
+end
+
+
+denoiseImg = uint8(denoised*255);
+
+          
+        end
+
+
+
+        function inversionImg = applyInversion(app, img)
+            
+          
+img = double(img)/255;
+% Apply Negative Filter (Inversion)
+inverted = 1 - img;
+
+inversionImg = uint8(inverted*255);
+
+        end
+
+
+
+        function cartoonImg = applyCartoon(app, img)
+            
+           
+            img = im2double(img); % Convert to double for processing
+
+
+% Step 1: Apply bilateral filter to smooth image while preserving edges
+sigmaSpatial = 0.8; % Spatial standard deviation
+sigmaRange = 20; % Range standard deviation
+% sigmaSpatial: Controls how much nearby pixels (in space) influence smoothing.
+% sigmaRange: Controls how much similar pixel intensities (in color) influence smoothing
+
+
+imgSmooth = imbilatfilt(img, sigmaRange, sigmaSpatial);
+% Applies bilateral filtering on the image using your defined parameters.
+% imgSmooth becomes a softened version of the original image with sharp edges intact
+
+
+% Step 2: Reduce colors using k-means clustering for cartoon effect
+nColors = 8; % Number of colors for quantization
+pixelValues = reshape(imgSmooth, [], 3); % Reshape to N x 3
+% Flattens the image to a 2D array of size [numPixels x 3], where each row is an RGB triplet.It is Necessary format for kmeans, which expects features as rows
+
+[idx, centroids] = kmeans(pixelValues, nColors, 'MaxIter', 100);
+% Applies k-means clustering to group all RGB pixels into 8 color clusters. idx is a label for each pixel (1 to 8), indicating which centroid it belongs to. centroids contains the 8 RGB values that represent the new colors
+
+cartoon = reshape(centroids(idx, :), size(imgSmooth));
+% Converts the quantized pixels back into the original image shape [height x width x 3].The result is a cartoon-like image with reduced, flat color regions
+
+% Step 3: Apply fisheye distortion for funny effect without black background
+[rows, cols, ~] = size(cartoon);
+[X, Y] = meshgrid(1:cols, 1:rows);
+Xc = cols/2; Yc = rows/2; % Center of image
+R = sqrt((X-Xc).^2 + (Y-Yc).^2); % Calculates the radial distance of each pixel from the center of the image
+
+Rmax = sqrt(Xc^2 + Yc^2); % Distance from the center to the farthest corner — the maximum possible radius
+
+k = 0.7; % Reduced distortion strength to minimize boundary issues
+% Distortion strength factor. Smaller value → less distortion, fewer edge issues
+
+
+Rd = R .* (1 + k * (R/Rmax).^2); % Distorted radius
+% Applies fisheye distortion using a formula that bulges distances nonlinearly based on their radius
+
+
+theta = atan2(Y-Yc, X-Xc); % Computes the angle (direction) of each pixel from the center in polar coordinates
+
+
+Xd = Xc + Rd .* cos(theta); % Distorted X
+Yd = Yc + Rd .* sin(theta); % Distorted Y
+% Converts the distorted polar coordinates (Rd, θ) back to cartesian (Xd, Yd)
+
+
+% Ensure distorted coordinates stay within image bounds to avoid indexing errors
+Xd = max(1, min(cols, Xd));
+Yd = max(1, min(rows, Yd));
+
+% intializing a blank image to store the result
+funnyCartoon = zeros(size(cartoon));
+
+
+for c = 1:3
+   funnyCartoon(:,:,c) = interp2(X, Y, cartoon(:,:,c), Xd, Yd, 'cubic', 0);
+end
+% For each color channel (R, G, B):
+% Uses interp2 to sample the original image at distorted positions (Xd, Yd).
+% cubic interpolation provides smooth results.
+% Values outside bounds are filled with 0 (black)
+
+
+
+% Step 4: Enhance brightness and saturation for vibrant look
+% converting rgb to hsv
+[h, w, ~] = size(funnyCartoon);
+hsv = zeros(h, w, 3);
+for i = 1:h
+   for j = 1:w
+       r = funnyCartoon(i,j,1);
+       g = funnyCartoon(i,j,2);
+       b = funnyCartoon(i,j,3);
+       maxC = max([r, g, b]);
+       minC = min([r, g, b]);
+       delta = maxC - minC;
+       if delta == 0
+           H = 0;
+       elseif maxC == r
+           H = mod(60 * ((g - b) / delta), 360);
+       elseif maxC == g
+           H = 60 * ((b - r) / delta) + 120;
+       else
+           H = 60 * ((r - g) / delta) + 240;
+       end
+       H = H / 360;
+       if maxC == 0
+           S = 0;
+       else
+           S = delta / maxC;
+       end
+       V = maxC;
+       hsv(i,j,:) = [H, S, V];
+   end
+end
+% Boost
+hsv(:,:,2) = hsv(:,:,2) * 1.2;
+hsv(:,:,3) = hsv(:,:,3) * 1.1;
+hsv = min(hsv, 1);  % Clip values to [0,1]
+% Convert back manually
+funnyCartoon = zeros(h, w, 3);
+for i = 1:h
+   for j = 1:w
+       H = hsv(i,j,1) * 360;
+       S = hsv(i,j,2);
+       V = hsv(i,j,3);
+       C = V * S;
+       X = C * (1 - abs(mod(H/60, 2) - 1));
+       m = V - C;
+       if H < 60
+           rgb = [C, X, 0];
+       elseif H < 120
+           rgb = [X, C, 0];
+       elseif H < 180
+           rgb = [0, C, X];
+       elseif H < 240
+           rgb = [0, X, C];
+       elseif H < 300
+           rgb = [X, 0, C];
+       else
+           rgb = [C, 0, X];
+       end
+       funnyCartoon(i,j,1) = rgb(1) + m;
+       funnyCartoon(i,j,2) = rgb(2) + m;
+       funnyCartoon(i,j,3) = rgb(3) + m;
+   end
+end
+
+
+% Step 5: Crop to remove any residual invalid regions (if any)
+validRegion = all(funnyCartoon > 0, 3); % Find non-black pixels i.e Identifies valid (non-black) regions in all 3 channels
+rowsValid = find(any(validRegion, 2));
+colsValid = find(any(validRegion, 1));
+% Finds row and column indices that contain valid pixels
+
+
+funnyCartoon = funnyCartoon(rowsValid(1):rowsValid(end), colsValid(1):colsValid(end), :);
+% Crops the image to keep only the non-black central part (removes black borders caused by fisheye warping)
+
+
+cartoonImg = uint8(funnyCartoon*255);
+
+          
+        end
+
+
+
+        function glitchImg = applyGlitch(app, img)
+            
+           img = double(img) / 255;
+img = imresize(img, [512, 512]);  % Resize once manually if needed
+[h, w, ~] = size(img);
+% --- Step 1: Manual RGB Channel Shift (Glitch Effect)
+shift = 5;
+% This creates a chromatic aberration glitch by shifting each color channel:
+% Red channel: shifted right
+% Green channel: shifted left
+% Blue channel: shifted down
+% Each pixel gets its color from a neighboring pixel in the same row or column (using     modular arithmetic for wraparound)
+
+
+
+
+R = zeros(h, w); G = zeros(h, w); B = zeros(h, w);   % Creates three empty grayscale matrices for Red, Green, and Blue channels. These matrices will store the shifted values for each color channel
+
+
+% Red: shift right[Move the red channel rightward by shift pixels]
+% img(i, new_j, 1) fetches red value from new_j (shifted index).
+% mod(..., w) + 1 ensures wrapping around when j - shift goes out of bounds (like a circular shift)
+for i = 1:h
+   for j = 1:w
+       new_j = mod(j - shift - 1, w) + 1;
+       R(i,j) = img(i,new_j,1);
+   end
+end
+
+
+% Green: shift left[Shift the green channel leftward by shift pixels]
+% Fetches green value from the shifted column new_j
+for i = 1:h
+   for j = 1:w
+       new_j = mod(j + shift - 1, w) + 1;
+       G(i,j) = img(i,new_j,2);
+   end
+end
+
+
+% Blue: shift down [Shift the blue channel downward by shift pixels]
+% Wraps around vertically using mod()
+for i = 1:h
+   for j = 1:w
+       new_i = mod(i - shift - 1, h) + 1;
+       B(i,j) = img(new_i,j,3);
+   end
+end
+glitch = cat(3, R, G, B); % Recombines the shifted R, G, and B channels into one RGB   image. cat(3, ...) stacks the 2D matrices along the 3rd dimension (RGB)
+
+
+
+% --- Step 2: Add Horizontal Scanlines
+
+% Every 3rd row is darkened to simulate retro CRT scanlines
+for row = 1:3:h
+   glitch(row,:,:) = glitch(row,:,:) * 0.5;
+end
+
+
+
+% --- Step 3: Manual RGB to HSV + Neon Boost
+
+% here we are converting rgb to hsv and then boosting the saturation and brightness to get the neon pop
+hsvImg = zeros(h, w, 3);
+for i = 1:h
+   for j = 1:w
+       r = glitch(i,j,1);
+       g = glitch(i,j,2);
+       b = glitch(i,j,3);
+       maxC = max([r, g, b]);
+       minC = min([r, g, b]);
+       delta = maxC - minC;
+       % Hue calculation
+       if delta == 0
+           H = 0;
+       elseif maxC == r
+           H = mod((60 * ((g - b) / delta)), 360);
+       elseif maxC == g
+           H = 60 * ((b - r) / delta) + 120;
+       else
+           H = 60 * ((r - g) / delta) + 240;
+       end
+       H = H / 360;  % Normalize hue to [0,1]
+       % Saturation
+       if maxC == 0
+           S = 0;
+       else
+           S = delta / maxC;
+       end
+       V = maxC;
+       % Boost saturation and brightness
+       S = min(S * 2.0, 1);
+       V = min(V * 1.3, 1);
+       hsvImg(i,j,:) = [H, S, V];
+   end
+end
+
+
+
+
+% --- Step 4: HSV to RGB (Manual) [ reverse the previous steps to get the neon coloured imaged ]
+neon = zeros(h, w, 3);
+for i = 1:h
+   for j = 1:w
+       H = hsvImg(i,j,1) * 360;
+       S = hsvImg(i,j,2);
+       V = hsvImg(i,j,3);
+       C = V * S;
+       X = C * (1 - abs(mod(H/60, 2) - 1));
+       m = V - C;
+       if H < 60
+           rgb = [C, X, 0];
+       elseif H < 120
+           rgb = [X, C, 0];
+       elseif H < 180
+           rgb = [0, C, X];
+       elseif H < 240
+           rgb = [0, X, C];
+       elseif H < 300
+           rgb = [X, 0, C];
+       else
+           rgb = [C, 0, X];
+       end
+       neon(i,j,1) = rgb(1) + m;
+       neon(i,j,2) = rgb(2) + m;
+       neon(i,j,3) = rgb(3) + m;
+   end
+end
+
+
+
+
+% --- Step 5: Manual Grayscale Conversion
+
+% now creating a grayscale image 2d which is used in next step for edge detection
+gray = zeros(h, w);
+for i = 1:h
+   for j = 1:w
+       R = img(i,j,1);
+       G = img(i,j,2);
+       B = img(i,j,3);
+       gray(i,j) = 0.2989 * R + 0.587 * G + 0.114 * B;
+   end
+end
+
+
+
+
+% --- Step 6: Sobel Edge Detection  [ it is also used in vector art. See there ] 
+edges = zeros(h, w);
+Gx = [-1 0 1; -2 0 2; -1 0 1];
+Gy = [-1 -2 -1; 0 0 0; 1 2 1];
+for i = 2:h-1
+   for j = 2:w-1
+       region = gray(i-1:i+1, j-1:j+1);
+       gx = sum(sum(Gx .* region));
+       gy = sum(sum(Gy .* region));
+       edges(i,j) = sqrt(gx^2 + gy^2);
+   end
+end
+edges = min(edges, 1);  % normalize edge strength
+
+
+
+
+% --- Step 7: Manual Gaussian Blur for Glow (1 pass)
+glow = zeros(h, w);
+kernel = [1 2 1; 2 4 2; 1 2 1] / 16;
+for i = 2:h-1
+   for j = 2:w-1
+       region = edges(i-1:i+1, j-1:j+1);
+       glow(i,j) = sum(sum(region .* kernel));
+   end
+end
+
+
+% since it was single passed so it gives soft edges and glowness
+
+
+
+
+% --- Step 8: Make Glow Cyan-Magenta Overlay
+glowOverlay = zeros(h, w, 3);
+glowOverlay(:,:,1) = glow;           % Red
+glowOverlay(:,:,2) = glow * 0.4;     % Green (less)
+glowOverlay(:,:,3) = glow;           % Blue
+
+% Creates a cyan-magenta glow effect by applying the blurred edge map as a color tint
+
+
+
+% --- Step 9: Combine Neon and Glow Overlay
+final = neon + glowOverlay;
+final = min(final, 1);  % Clamp values to [0,1]
+
+
+
+
+glitchImg = uint8(final*255);
+
+          
+        end
+
+
+
+
+
+         function rgbImg = applyRgb(app, img)
+            
+           img = double(img) / 255;
+img = imresize(img, [512, 512]);  % Resize once manually if needed
+[h, w, ~] = size(img);
+% --- Step 1: Manual RGB Channel Shift (Glitch Effect)
+shift = 5;
+% This creates a chromatic aberration glitch by shifting each color channel:
+% Red channel: shifted right
+% Green channel: shifted left
+% Blue channel: shifted down
+% Each pixel gets its color from a neighboring pixel in the same row or column (using     modular arithmetic for wraparound)
+
+
+
+
+R = zeros(h, w); G = zeros(h, w); B = zeros(h, w);   % Creates three empty grayscale matrices for Red, Green, and Blue channels. These matrices will store the shifted values for each color channel
+
+
+% Red: shift right[Move the red channel rightward by shift pixels]
+% img(i, new_j, 1) fetches red value from new_j (shifted index).
+% mod(..., w) + 1 ensures wrapping around when j - shift goes out of bounds (like a circular shift)
+for i = 1:h
+   for j = 1:w
+       new_j = mod(j - shift - 1, w) + 1;
+       R(i,j) = img(i,new_j,1);
+   end
+end
+
+
+% Green: shift left[Shift the green channel leftward by shift pixels]
+% Fetches green value from the shifted column new_j
+for i = 1:h
+   for j = 1:w
+       new_j = mod(j + shift - 1, w) + 1;
+       G(i,j) = img(i,new_j,2);
+   end
+end
+
+
+% Blue: shift down [Shift the blue channel downward by shift pixels]
+% Wraps around vertically using mod()
+for i = 1:h
+   for j = 1:w
+       new_i = mod(i - shift - 1, h) + 1;
+       B(i,j) = img(new_i,j,3);
+   end
+end
+glitch = cat(3, R, G, B); % Recombines the shifted R, G, and B channels into one RGB   image. cat(3, ...) stacks the 2D matrices along the 3rd dimension (RGB)
+
+
+
+% --- Step 2: Add Horizontal Scanlines
+
+% Every 3rd row is darkened to simulate retro CRT scanlines
+for row = 1:3:h
+   glitch(row,:,:) = glitch(row,:,:) * 0.5;
+end
+
+
+rgbImg = uint8(glitch*255);
+
+          
+        end
+
+
+
+
+
+
+
+        function neonImg = applyNeon(app, img)
+            
+           img = double(img) / 255;
+img = imresize(img, [512, 512]);  % Resize once manually if needed
+[h, w, ~] = size(img);
+
+
+
+
+
+% --- Step 3: Manual RGB to HSV + Neon Boost
+
+% here we are converting rgb to hsv and then boosting the saturation and brightness to get the neon pop
+hsvImg = zeros(h, w, 3);
+for i = 1:h
+   for j = 1:w
+       r = img(i,j,1);
+       g = img(i,j,2);
+       b = img(i,j,3);
+       maxC = max([r, g, b]);
+       minC = min([r, g, b]);
+       delta = maxC - minC;
+       % Hue calculation
+       if delta == 0
+           H = 0;
+       elseif maxC == r
+           H = mod((60 * ((g - b) / delta)), 360);
+       elseif maxC == g
+           H = 60 * ((b - r) / delta) + 120;
+       else
+           H = 60 * ((r - g) / delta) + 240;
+       end
+       H = H / 360;  % Normalize hue to [0,1]
+       % Saturation
+       if maxC == 0
+           S = 0;
+       else
+           S = delta / maxC;
+       end
+       V = maxC;
+       % Boost saturation and brightness
+       S = min(S * 2.0, 1);
+       V = min(V * 1.3, 1);
+       hsvImg(i,j,:) = [H, S, V];
+   end
+end
+
+
+
+
+% --- Step 4: HSV to RGB (Manual) [ reverse the previous steps to get the neon coloured imaged ]
+neon = zeros(h, w, 3);
+for i = 1:h
+   for j = 1:w
+       H = hsvImg(i,j,1) * 360;
+       S = hsvImg(i,j,2);
+       V = hsvImg(i,j,3);
+       C = V * S;
+       X = C * (1 - abs(mod(H/60, 2) - 1));
+       m = V - C;
+       if H < 60
+           rgb = [C, X, 0];
+       elseif H < 120
+           rgb = [X, C, 0];
+       elseif H < 180
+           rgb = [0, C, X];
+       elseif H < 240
+           rgb = [0, X, C];
+       elseif H < 300
+           rgb = [X, 0, C];
+       else
+           rgb = [C, 0, X];
+       end
+       neon(i,j,1) = rgb(1) + m;
+       neon(i,j,2) = rgb(2) + m;
+       neon(i,j,3) = rgb(3) + m;
+   end
+end
+
+
+
+
+
+neonImg = uint8(neon*255);
+
+          
+        end
+
+
+
+
+
+
+
+         function glowOverlayImg = applyGlowOverlay(app, img)
+            
+           img = double(img) / 255;
+img = imresize(img, [512, 512]);  % Resize once manually if needed
+[h, w, ~] = size(img);
+
+
+
+% --- Step 5: Manual Grayscale Conversion
+
+% now creating a grayscale image 2d which is used in next step for edge detection
+gray = zeros(h, w);
+for i = 1:h
+   for j = 1:w
+       R = img(i,j,1);
+       G = img(i,j,2);
+       B = img(i,j,3);
+       gray(i,j) = 0.2989 * R + 0.587 * G + 0.114 * B;
+   end
+end
+
+
+
+
+% --- Step 6: Sobel Edge Detection  [ it is also used in vector art. See there ] 
+edges = zeros(h, w);
+Gx = [-1 0 1; -2 0 2; -1 0 1];
+Gy = [-1 -2 -1; 0 0 0; 1 2 1];
+for i = 2:h-1
+   for j = 2:w-1
+       region = gray(i-1:i+1, j-1:j+1);
+       gx = sum(sum(Gx .* region));
+       gy = sum(sum(Gy .* region));
+       edges(i,j) = sqrt(gx^2 + gy^2);
+   end
+end
+edges = min(edges, 1);  % normalize edge strength
+
+
+
+
+% --- Step 7: Manual Gaussian Blur for Glow (1 pass)
+glow = zeros(h, w);
+kernel = [1 2 1; 2 4 2; 1 2 1] / 16;
+for i = 2:h-1
+   for j = 2:w-1
+       region = edges(i-1:i+1, j-1:j+1);
+       glow(i,j) = sum(sum(region .* kernel));
+   end
+end
+
+
+% since it was single passed so it gives soft edges and glowness
+
+
+
+
+% --- Step 8: Make Glow Cyan-Magenta Overlay
+glowOverlay = zeros(h, w, 3);
+glowOverlay(:,:,1) = glow;           % Red
+glowOverlay(:,:,2) = glow * 0.4;     % Green (less)
+glowOverlay(:,:,3) = glow;           % Blue
+
+% Creates a cyan-magenta glow effect by applying the blurred edge map as a color tint
+
+
+glowOverlayImg = uint8(glowOverlay*255);
+
+          
+        end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        function mosiacImg = applyMosiac(app, img)
+            
+           img = double(img) / 255;
+% --- Step 1: Resize image to 512x512
+% why? Images often come in various sizes.By resizing all images to a fixed 512×512 size, the rest of your code (e.g., blurring or mosaic) can assume a consistent input size. This simplifies kernel application and display. We used 512 bcz 512×512 is a good compromise it Large enough to retain detail.Small enough to process quickly — especially important when applying filters manually with nested loops
+
+
+img_resized = zeros(512, 512, 3);
+[H, W, ~] = size(img);
+% Prepares a new image (img_resized) of size 512×512 with 3 color channels. And Gets the original height H and width W of the image
+
+
+% Loop through each pixel in the new image
+%Manually maps each (i,j) in the resized image to a corresponding (src_i, src_j) in the original using nearest-neighbor interpolation
+for i = 1:512
+   for j = 1:512
+       src_i = round((i - 0.5) * H / 512 + 0.5);
+       src_j = round((j - 0.5) * W / 512 + 0.5);
+
+% Clamps indices to valid range with
+       src_i = min(max(src_i, 1), H);
+       src_j = min(max(src_j, 1), W);
+
+       img_resized(i,j,:) = img(src_i, src_j, :);
+   end
+end
+img = img_resized;
+[h, w, ~] = size(img);
+
+
+  % --- Manual Mosaic (Pixelation)[ if chosen this then we need to Create a pixelated effect by shrinking and expanding the image ]
+
+       scale = 0.05;
+       small_h = round(h * scale);
+       small_w = round(w * scale);
+       % Downsample manually (nearest neighbor) it Shrinks the image to ~5% size using nearest-neighbor downsampling (keeping only some representative pixels)
+       small = zeros(small_h, small_w, 3);
+       for i = 1:small_h
+           for j = 1:small_w
+               src_i = round((i - 0.5) * h / small_h + 0.5);
+               src_j = round((j - 0.5) * w / small_w + 0.5);
+               src_i = min(max(src_i, 1), h);
+               src_j = min(max(src_j, 1), w);
+               small(i,j,:) = img(src_i, src_j,:);
+           end
+       end
+
+
+       % Upsample manually (nearest neighbor)it enlarges the image back to original size, repeating the same small blocks — creating a pixelated look
+       result = zeros(h, w, 3);
+       for i = 1:h
+           for j = 1:w
+               src_i = round((i - 0.5) * small_h / h + 0.5);
+               src_j = round((j - 0.5) * small_w / w + 0.5);
+               src_i = min(max(src_i, 1), small_h);
+               src_j = min(max(src_j, 1), small_w);
+               result(i,j,:) = small(src_i, src_j,:);
+           end
+       end
+       
+
+
+mosiacImg = uint8(result * 255);
+ 
+        end
+
+
+
+
+
+ function blurImg = applyBlur(app, img)
+            
+           img = double(img) / 255;
+% --- Step 1: Resize image to 512x512
+% why? Images often come in various sizes.By resizing all images to a fixed 512×512 size, the rest of your code (e.g., blurring or mosaic) can assume a consistent input size. This simplifies kernel application and display. We used 512 bcz 512×512 is a good compromise it Large enough to retain detail.Small enough to process quickly — especially important when applying filters manually with nested loops
+
+
+img_resized = zeros(512, 512, 3);
+[H, W, ~] = size(img);
+% Prepares a new image (img_resized) of size 512×512 with 3 color channels. And Gets the original height H and width W of the image
+
+
+% Loop through each pixel in the new image
+%Manually maps each (i,j) in the resized image to a corresponding (src_i, src_j) in the original using nearest-neighbor interpolation
+for i = 1:512
+   for j = 1:512
+       src_i = round((i - 0.5) * H / 512 + 0.5);
+       src_j = round((j - 0.5) * W / 512 + 0.5);
+
+% Clamps indices to valid range with
+       src_i = min(max(src_i, 1), H);
+       src_j = min(max(src_j, 1), W);
+
+       img_resized(i,j,:) = img(src_i, src_j, :);
+   end
+end
+img = img_resized;
+[h, w, ~] = size(img);
+
+
+ % --- Manual Blur using Gaussian Kernel i.e if choosed blur then Soften the image by averaging nearby pixels weighted by a Gaussian kernel
+       kernelSize = 15;
+       sigma = 3;
+       halfK = floor(kernelSize / 2);
+       % Create Gaussian kernel manually
+       [X, Y] = meshgrid(-halfK:halfK, -halfK:halfK);
+       G = exp(-(X.^2 + Y.^2) / (2 * sigma^2));
+       G = G / sum(G(:));  % Normalizes
+
+% Constructs a 15×15 Gaussian filter.
+% G is the normalized Gaussian kernel (weights sum to 1)
+  
+
+     % Apply convolution
+       result = zeros(h, w, 3);
+       padded = padarray(img, [halfK halfK], 'replicate');
+       for ch = 1:3
+           for i = 1:h
+               for j = 1:w
+                   region = padded(i:i+kernelSize-1, j:j+kernelSize-1, ch);
+                   result(i,j,ch) = sum(sum(region .* G));   % .* means element wise multiplication
+               end
+           end
+       end
+
+% For each channel (R, G, B), slides the kernel over the image.
+% Applies the Gaussian blur by summing the weighted neighborhood
+
+blurImg = uint8(result * 255);
+
+
+end
+
+
+
+
+
+        function beautifyImg = applyBeautify(app, img)
+            
+           img = double(img) / 255;
+
+[h, w, ~] = size(img);
+% --- Step 1: Manual Gaussian Blur (Skin Smoothing). Here we Blur fine skin details while keeping edges soft
+sigma = 2;
+kernelSize = 11;  % should be odd
+% Gaussian blur parameters: sigma controls smoothness,kernelSize is the size of the filter
+
+
+halfK = floor(kernelSize / 2);
+% Create Gaussian Kernel
+[X, Y] = meshgrid(-halfK:halfK, -halfK:halfK);
+G = exp(-(X.^2 + Y.^2) / (2 * sigma^2));
+G = G / sum(G(:));  % Normalize
+
+% here Makes a 2D Gaussian kernel matrix using the Gaussian formula. And Normalized so all values sum to 1
+
+
+% Pads the image to handle edges.'replicate' repeats border pixels
+padded = padarray(img, [halfK halfK], 'replicate');
+
+blurredImg = zeros(h, w, 3);
+% Apply convolution manually
+for c = 1:3
+   for i = 1:h
+       for j = 1:w
+           region = padded(i:i+kernelSize-1, j:j+kernelSize-1, c);
+           blurredImg(i,j,c) = sum(sum(region .* G));
+       end
+   end
+end
+
+% here we Applies the kernel to each 3×3 patch of the image manually via element-wise multiplication and summing
+
+
+
+% --- Step 2: Manual HSV Conversion & Color Enhancement
+% Convert RGB to HSV manually
+R = blurredImg(:,:,1);
+G = blurredImg(:,:,2);
+B = blurredImg(:,:,3);
+% extracting the red , green and blue channels from the blurred image
+
+
+Cmax = max(blurredImg, [], 3);  % brightest channel. It is the maximum value across rgb which will be used to calculate hue
+Cmin = min(blurredImg, [], 3);  % darkest channel. Min value
+delta = Cmax - Cmin; % difference between min and max value. It will be used to calculate hue and saturation
+
+
+
+% initalizing matrices for hue and saturation
+% note : In the HSV color model:
+%        -H stands for Hue (the type of color — red, green, blue, etc.)
+%        -S stands for Saturation (how intense or pure the color is)
+%        -V stands for Value (brightness)
+
+% and by value of HSV , V is maximum of RGB
+
+H = zeros(h, w);  
+S = zeros(h, w);
+V = Cmax;
+
+
+
+
+% Hue calculation
+mask = delta ~= 0;
+% Only compute hue for pixels where color difference exists
+
+% CONDITIONS FOR CALCULATING HUE BASED ON WHICH CHANNELS IS MAX
+idx = (Cmax == R) & mask;
+H(idx) = mod((G(idx) - B(idx)) ./ delta(idx), 6);
+idx = (Cmax == G) & mask;
+H(idx) = ((B(idx) - R(idx)) ./ delta(idx)) + 2;
+idx = (Cmax == B) & mask;
+H(idx) = ((R(idx) - G(idx)) ./ delta(idx)) + 4;
+
+
+% NORMALISING H IN THE RANGE 0,1 . AND ADD ONE IF -VE TO WRAP IT IN THE RANGE
+H = H / 6;
+H(H < 0) = H(H < 0) + 1;
+
+
+% Saturation calculation
+S(Cmax ~= 0) = delta(Cmax ~= 0) ./ Cmax(Cmax ~= 0);
+% Saturation is 0 if the pixel is grayscale (Cmax = 0), else it’s delta/Cmax
+
+
+
+% Boost saturation by 20%
+S = min(S * 1.2, 1);
+% Boost saturation by 20% (but keep it ≤ 1). This enhances color intensity
+
+
+
+
+% HSV to RGB manually
+C = S .* V;
+X = C .* (1 - abs(mod(H*6, 2) - 1));
+m = V - C;
+% NOTE: 
+% C: chroma (color intensity)
+% X: used for intermediate RGB values based on hue sector
+% m: used for shifting the colors back to the original brightness
+
+
+R1 = zeros(h,w); G1 = zeros(h,w); B1 = zeros(h,w);
+h6 = H*6;
+for i = 1:h
+   for j = 1:w
+       if h6(i,j) < 1
+           r= C(i,j); g= X(i,j); b= 0;
+       elseif h6(i,j) < 2
+           r= X(i,j); g= C(i,j); b= 0;
+       elseif h6(i,j) < 3
+           r= 0; g= C(i,j); b= X(i,j);
+       elseif h6(i,j) < 4
+           r= 0; g= X(i,j); b= C(i,j);
+       elseif h6(i,j) < 5
+           r= X(i,j); g= 0; b= C(i,j);
+       else
+           r= C(i,j); g= 0; b= X(i,j);
+       end
+       R1(i,j) = r + m(i,j);
+       G1(i,j) = g + m(i,j);
+       B1(i,j) = b + m(i,j);
+
+% Add m back to each channel to match original brightness (V)
+
+   end
+end
+beautifiedImg = cat(3, R1, G1, B1);  % Concatenate R, G, B into one final beautified image
+
+
+% --- Step 3: Manual Sharpening
+% Simple sharpening: enhanced = original + amount * (original - blurred)
+
+% restore the original clarity lost due to blurring
+radius = 2;  % manually define as an offset blur
+amount = 1;
+% Apply second blur for sharpening base
+blurredSharp = zeros(h, w, 3);
+halfK2 = floor((2*radius+1)/2);
+[X2, Y2] = meshgrid(-halfK2:halfK2, -halfK2:halfK2);
+G2 = exp(-(X2.^2 + Y2.^2) / (2 * radius^2));
+G2 = G2 / sum(G2(:));
+padded2 = padarray(beautifiedImg, [halfK2 halfK2], 'replicate');
+for c = 1:3
+   for i = 1:h
+       for j = 1:w
+           region = padded2(i:i+2*halfK2, j:j+2*halfK2, c);
+           blurredSharp(i,j,c) = sum(sum(region .* G2));
+       end
+   end
+end
+% Sharpening equation
+sharpenedImg = beautifiedImg + amount * (beautifiedImg - blurredSharp);  % boosts high-frequency edges
+sharpenedImg = min(max(sharpenedImg, 0), 1);  % Clips values to keep them valid between 0 and 1
+
+
+beautifyImg = uint8(sharpenedImg*255);
+          
+        end
+
+
+
+
+        function vectorImg = applyVector(app, img)
+            
+         
+img = double(img) / 255;
+[h, w, ~] = size(img);
+% --- Step 2: Convert to grayscale manually  [ like we did previously ]
+grayImg = zeros(h, w);         % Initialize grayscale image
+weights = [0.2989, 0.5870, 0.1140];  % 1x3 vector
+for i = 1:h
+  for j = 1:w
+      R = img(i, j, 1);
+      G = img(i, j, 2);
+      B = img(i, j, 3);
+    
+      pixel = [R; G; B];           % 3x1 column vector
+      grayImg(i, j) = weights * pixel;  % Dot product: 1x3 * 3x1
+  end
+end
+% --- Step 3: Manual Canny edge detection (simplified)
+% Step 3.1: Gaussian smoothing
+sigma = 1;  % Controls the spread of the blur (higher = more blur).
+kernelSize = 5;   % this means we are creating a 5x5 kernel which is nothing but a sliding window across the image
+halfK = floor(kernelSize/2);   % this centres the kernel
+[X, Y] = meshgrid(-halfK:halfK, -halfK:halfK);
+G = exp(-(X.^2 + Y.^2) / (2 * sigma^2));  %This creates a 5x5 weight matrix where the center has the highest value, and corners have lower weights
+G = G / sum(G(:));  % Normalizes the kernel so the total sum = 1
+% This Ensures brightness stays consistent after blurring
+paddedGray = padarray(grayImg, [halfK halfK], 'replicate');  % Adds a 2-pixel padding around the image using the edge values.
+% Why? So we can apply a 5x5 kernel even at the edges without going out of bounds
+smoothed = zeros(h, w);  % this Prepares an empty matrix for the final blurred result.
+for i = 1:h
+  for j = 1:w
+      region = paddedGray(i:i+kernelSize-1, j:j+kernelSize-1);
+      smoothed(i,j) = sum(sum(region .* G));
+  end
+end
+% Step 3.2: Sobel gradients  [ why did we do this ? -> To find edges in the image —locations where pixel brightness changes quickly. This is a key step in edge detection, which helps identify boundaries, shapes, or features in the image  ]
+% Step 3.2: Manual Sobel gradient computation
+Sx = [-1 0 1; -2 0 2; -1 0 1];
+Sy = [-1 -2 -1; 0 0 0; 1 2 1];
+% These are Sobel kernels, used to detect edges:
+% Sx: detects horizontal edges (changes along x-axis)
+% Sy: detects vertical edges (changes along y-axis)
+% They highlight how intensity changes — sharp intensity changes = edge
+% Pad the smoothed image to handle borders
+paddedSmooth = padarray(smoothed, [1 1], 'replicate');  % We need padding so that the 3×3 kernel can slide over every pixel (even the corners). 'replicate' means edge values are copied
+Gx = zeros(h, w);
+Gy = zeros(h, w);
+magnitude = zeros(h, w);
+% they store
+%Gx: Horizontal gradient at each pixel.
+%Gy: Vertical gradient at each pixel.
+%magnitude: Total edge strength
+% Slide 3x3 kernel over the image manually
+for i = 1:h
+   for j = 1:w
+       % Extract 3x3 region centered at (i,j)
+       region = paddedSmooth(i:i+2, j:j+2);
+      
+       % Apply Sobel filters manually
+       gx = sum(sum(region .* Sx));
+       gy = sum(sum(region .* Sy));
+      
+       % Store horizontal and vertical gradients
+       Gx(i,j) = gx;
+       Gy(i,j) = gy;
+      
+       % Compute gradient magnitude
+       magnitude(i,j) = sqrt(gx^2 + gy^2);
+   end
+end
+% in this loop what we are doing is
+%We:
+%Grab a 3×3 region from the padded image.
+%Multiply it element-by-element with the Sobel kernel.
+%Use sum(sum(...)) to compute a single gradient value in x and y
+%This is convolution being done manually
+% then we are Storing gradients and Combine them with Pythagorean theorem
+% Step 3.3: Threshold edges
+% why we do this step
+% -> This line filters out the edges based on how strong they are.It keeps only the pixels % where the edge strength (magnitude) is:
+% Greater than 0.1, and
+% Less than 0.2
+% So, you're only highlighting the edges that are in a specific range of strength — not too weak, not too strong
+edges = magnitude > 4 & magnitude < 5;
+% this is called thresholding, and it's a common step in edge detection:
+% Let’s say magnitude(i,j) gives the strength of edge at pixel (i,j).
+% This condition:
+% if  0.1<magnitude(𝑖,𝑗)<0.2 ⇒ keep pixel
+% Otherwise, ignore it
+% note that: Lower range → more edges (noisier) and Higher range → fewer but stronger edges (cleaner). Here range is 0.1 to 0.2
+% --- Step 4: Manual Color Quantization using k-means
+% why this?
+% Reduce the image to only numColors (e.g. 8) distinct colors, to get a flat, cartoon-like or vector-style image. This is done using the K-means clustering algorithm.Each pixel color (R, G, B) is treated as a 3D point.K-means groups these colors into k clusters (color groups), and replaces every pixel with the color of the nearest cluster center
+numColors = 16;
+pixels = reshape(img, [], 3);
+% img is H×W×3 → it’s reshaped to N×3 (N = H×W). Each row of pixels = one pixel's color: [R, G, B]
+% Run K-means manually
+maxIter = 10;   % running k means for 10 iterations
+N = size(pixels, 1);
+centroids = pixels(randperm(N, numColors), :);
+% here Randomly pick numColors pixels to act as starting centroids (cluster colors). And randperm ensures unique pixels
+for iter = 1:maxIter
+  % Assign to nearest centroid
+  dists = pdist2(pixels, centroids);
+  [~, idx] = min(dists, [], 2);
+ 
+  % here pdist2 gives a matrix of distances from each pixel to each centroid. idx tells       you which centroid (cluster) each pixel is assigned to
+  % Recompute centroids
+  for k = 1:numColors
+      if any(idx == k)
+          centroids(k,:) = mean(pixels(idx == k, :), 1);
+   % For each cluster k, take all pixels assigned to it, and compute their average color → that becomes the new centroid. This is the update step of K-means
+      end
+  end
+end
+% This whole loop repeats maxIter times to converge toward better clusters
+% Assign quantized colors
+quantizedPixels = centroids(idx, :);
+quantizedImg = reshape(quantizedPixels, h, w, 3);
+% Now that each pixel has been assigned a centroid, replace its color with the centroid’s color. Then reshape back to original image size
+% what the above 2-3 steps did is they removes gradients and smooth color transitions, creating a flat, posterized, stylized image, good for vector art effects
+
+
+vectorImg = uint8(quantizedImg*255);
+        end
+
+
+
+
+
+        function vignetteImg = applyVigenette(app, img)
+
+    % Step 1: Normalize the image
+    face = double(img) / 255;
+    [height, width, ~] = size(face);
+
+    output = face;
+
+    % Step 2: Vignette Effect
+    centerX = width / 2;
+    centerY = height / 2;
+    maxRadius = min(centerX, centerY);
+
+    % Vectorized vignette mask
+    [X, Y] = meshgrid(1:width, 1:height);
+    distance = sqrt((X - centerX).^2 + (Y - centerY).^2);
+    intensity = max(0, 1 - distance / maxRadius);
+    vignetteMask = repmat(intensity, 1, 1, 3); % Replicate for R,G,B
+
+    % Apply vignette mask
+    output = output .* vignetteMask;
+
+    % Step 3: Add Glowing Lights (requires uint8 image)
+    tempImg = uint8(output * 255);  % Convert once, correctly
+    numLights = 30;
+    lightColor = [255, 223, 186];  % Soft yellow-orange
+    lightPositions = [randi([1, width], numLights, 1), randi([1, height], numLights, 1)];
+
+    for i = 1:numLights
+        lightRadius = randi([10, 20]);
+        tempImg = insertShape(tempImg, 'FilledCircle', ...
+            [lightPositions(i,1), lightPositions(i,2), lightRadius], ...
+            'Color', lightColor, 'Opacity', 0.5);
+    end
+
+    % Final image
+    vignetteImg = tempImg;
+
+end
+
+
+
+
+
+
+
+
+function pencilImg = applyPencil(app, img)
+
+   img = im2double(rgb2gray(img));
+invImg = 1 - img;
+blur = imgaussfilt(invImg, 12);
+dodge = img ./ (1 - blur + 1e-6);
+dodge = min(dodge, 1);           % clamp values
+dodge = dodge .^ 21;            % reduce brightness
+
+
+pencilImg = dodge;
+
+end
+
+
+     
+
+
+
+
+function showFilterResult(app, filteredImage, filterFunc , titleName)
+            filterWindow = uifigure('Name', titleName, 'Position', [100 100 500 500]);
+
+    % Create an axis to show the image
+    ax = uiaxes(filterWindow, 'Position', [50 100 400 350]);
+    imshow(filteredImage, 'Parent', ax);
+
+
+    % Upload button specific to this filter
+    uibutton(filterWindow, 'Text', 'Upload Image', ...
+        'Position', [175 70 150 30], ...
+        'ButtonPushedFcn', @(btn,event) runUploadAndFilter(app, filterFunc, ax));
+
+    
+    % Button to go back
+    uibutton(filterWindow, 'Text', 'Explore More', ...
+        'Position', [200 30 100 30], ...
+        'ButtonPushedFcn', @(btn,event) backToMain(app, filterWindow));
+
+    
+
+        end
+
+
+
+        
+        function backToMain(app , windowToClose)
+            close(windowToClose);             % Close the filter window
+            app.UIFigure.Visible = 'on';      % Ensure main app is visible
+            figure(app.UIFigure);             % Bring main app to focus/front
+        end
+
+
+
+        function runUploadAndFilter(app, filterFunc, ax )
+   [file, path] = uigetfile({'*.jpg;*.png;*.jpeg','Image Files'});
+    if isequal(file, 0)
+        return; % User canceled
+    end
+
+    img = imread(fullfile(path, file));
+    filterFunc = app.FilterList{app.CurrentFilterIndex}.Function;
+    filtered = filterFunc(img);  % Apply selected filter
+    app.FilteredImage = filtered;
+
+    % CLOSE ALL OTHER UI FIGURES except main app before showing new
+    figs = findall(0, 'Type', 'figure');
+    for i = 1:length(figs)
+        if ~isequal(figs(i), app.UIFigure)
+            close(figs(i));
+        end
+    end
+
+    % Display result
+    showFilterResult(app, filtered, filterFunc , 'RESULT');
+end
+
+
+
+
+        
+        function updateCarouselDisplay(app)
+            % Display the images from FilterList
+        if isempty(app.FilterList)
+            return;
+        end
+
+        current = app.CurrentFilterIndex;
+
+        % For example: assuming you want to display 3 filters at a time
+        leftIndex = mod(current - 2, numel(app.FilterList)) + 1;
+        centerIndex = mod(current - 1, numel(app.FilterList)) + 1;
+        rightIndex = mod(current, numel(app.FilterList)) + 1;
+
+        % Load and display images
+        app.Image_3.ImageSource = app.FilterList{leftIndex}.Image;
+        app.MainImage.ImageSource = app.FilterList{centerIndex}.Image;
+        app.Image_4.ImageSource = app.FilterList{rightIndex}.Image;
+
+        end
+    end
+    
+
+
+
+    
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Code that executes after component creation
+        function startupFcn(app)
+           
+            app.FilterList= {
+
+
+               struct('Name', 'Cropping', ...
+                      'Image', 'filters/1.png', ...
+                      'Function', @app.applyCrop), 
+
+               struct('Name', 'Contrast', ...
+                      'Image', 'filters/2.png', ...
+                      'Function', @app.applyContrast),
+   
+               struct('Name', 'Rotation', ...
+                      'Image', 'filters/3.png', ...
+                      'Function', @app.applyRotation),
+
+               struct('Name', 'Flip', ...
+                      'Image', 'filters/4.png', ...
+                      'Function', @app.applyFlip),                      
+
+               struct('Name', 'Scaling', ...
+                      'Image', 'filters/5.png', ...
+                      'Function', @app.applyScaling), 
+
+               struct('Name', 'Grayscale', ...
+                      'Image', 'filters/6.png', ...
+                      'Function', @app.applyGrayscale), 
+
+
+               struct('Name', 'Noise', ...
+                      'Image', 'filters/7.png', ...
+                      'Function', @app.applyNoise), 
+
+
+               struct('Name', 'Denoise', ...
+                      'Image', 'filters/8.png', ...
+                      'Function', @app.applyDenoise), 
+
+
+
+               struct('Name', 'Inversion', ...
+                      'Image', 'filters/9.png', ...
+                      'Function', @app.applyInversion), 
+
+
+               struct('Name', 'Cartoon', ...
+                      'Image', 'filters/10.png', ...
+                      'Function', @app.applyCartoon), 
+
+               struct('Name', 'Glitch', ...
+                      'Image', 'filters/11.png', ...
+                      'Function', @app.applyGlitch), 
+
+
+               struct('Name', 'RGB Glitch', ...
+                      'Image', 'filters/12.png', ...
+                      'Function', @app.applyRgb), 
+               
+
+               struct('Name', 'Neon Boost', ...
+                      'Image', 'filters/13.png', ...
+                      'Function', @app.applyNeon), 
+
+
+               struct('Name', 'Glow Overlay', ...
+                      'Image', 'filters/14.png', ...
+                      'Function', @app.applyGlowOverlay), 
+
+
+                      
+               struct('Name', 'Mosiac', ...
+                      'Image', 'filters/15.png', ...
+                      'Function', @app.applyMosiac), 
+
+
+               struct('Name', 'Blur', ...
+                      'Image', 'filters/16.png', ...
+                      'Function', @app.applyBlur), 
+
+
+               struct('Name', 'Beautify', ...
+                      'Image', 'filters/17.png', ...
+                      'Function', @app.applyBeautify), 
+
+               struct('Name', 'Vector', ...
+                      'Image', 'filters/18.png', ...
+                      'Function', @app.applyVector), 
+
+               struct('Name', 'Vigenette', ...
+                      'Image', 'filters/19.png', ...
+                      'Function', @app.applyVigenette), 
+
+
+               struct('Name', 'Pencil Art', ...
+                      'Image', 'filters/20.png', ...
+                      'Function', @app.applyPencil), 
+
+               
+};
+
+
+            app.CurrentFilterIndex = 1;      % start on the first filter
+            app.updateCarouselDisplay();     % paint the carousel
+            % Initial display of carousel
+            % app.updateCarouselDisplay();
+
+        end
+
+        % Image clicked function: MainImage
+        function MainImageImageClicked(app, event)
+             [file, path] = uigetfile({'*.jpg;*.png;*.jpeg','Image Files'});
+    if isequal(file, 0)
+        return;
+    end
+
+    img = imread(fullfile(path, file));
+    filterFunc = app.FilterList{app.CurrentFilterIndex}.Function;
+    filtered = filterFunc(img);
+    app.FilteredImage = filtered;
+
+    showFilterResult(app, filtered, filterFunc , [char(app.FilterList{app.CurrentFilterIndex}.Name) ' Filter Result']);
+        end
+
+        % Image clicked function: Image_3
+        function Image_3Clicked(app, event)
+            app.scrollLeft();
+        end
+
+        % Image clicked function: Image_4
+        function Image_4Clicked(app, event)
+            app.scrollRight();
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Get the file path for locating images
+            pathToMLAPP = fileparts(mfilename('fullpath'));
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Color = [1 1 1];
+            app.UIFigure.Position = [100 100 1486 1194];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create Image_3
+            app.Image_3 = uiimage(app.UIFigure);
+            app.Image_3.ImageClickedFcn = createCallbackFcn(app, @Image_3Clicked, true);
+            app.Image_3.Position = [-184 369 346 370];
+
+            % Create Image_4
+            app.Image_4 = uiimage(app.UIFigure);
+            app.Image_4.ImageClickedFcn = createCallbackFcn(app, @Image_4Clicked, true);
+            app.Image_4.Position = [1320 369 340 406];
+
+            % Create Image
+            app.Image = uiimage(app.UIFigure);
+            app.Image.URL = 'https://www.linkedin.com/in/sourav-kumar-verma-2405932ba';
+            app.Image.Position = [1290 34 28 37];
+            app.Image.ImageSource = fullfile(pathToMLAPP, 'linkedin.png');
+
+            % Create Image_5
+            app.Image_5 = uiimage(app.UIFigure);
+            app.Image_5.URL = 'https://github.com/Editoredn';
+            app.Image_5.Position = [1318 37 58 31];
+            app.Image_5.ImageSource = fullfile(pathToMLAPP, 'github.png');
+
+            % Create Image_6
+            app.Image_6 = uiimage(app.UIFigure);
+            app.Image_6.URL = 'https://mail.google.com/mail/?view=cm&fs=1&to=editorbro006@gmail.com&su=Matpix%20Query&body=Hi%2C%20I%20have%20a%20question%20about...';
+            app.Image_6.Position = [1366 34 50 35];
+            app.Image_6.ImageSource = fullfile(pathToMLAPP, 'gmail.png');
+
+            % Create Image_7
+            app.Image_7 = uiimage(app.UIFigure);
+            app.Image_7.URL = 'https://www.instagram.com/souravPb_10?igsh=MTkzMmJvajlmYTd5ZA==';
+            app.Image_7.Position = [1409 32 49 38];
+            app.Image_7.ImageSource = fullfile(pathToMLAPP, 'rename.jpg');
+
+            % Create ConnectwithusLabel
+            app.ConnectwithusLabel = uilabel(app.UIFigure);
+            app.ConnectwithusLabel.FontSize = 14;
+            app.ConnectwithusLabel.FontWeight = 'bold';
+            app.ConnectwithusLabel.Position = [1166 30 151 40];
+            app.ConnectwithusLabel.Text = 'Connect with us';
+
+            % Create MainImage
+            app.MainImage = uiimage(app.UIFigure);
+            app.MainImage.ImageClickedFcn = createCallbackFcn(app, @MainImageImageClicked, true);
+            app.MainImage.Position = [482 342 527 514];
+
+            % Create Image2
+            app.Image2 = uiimage(app.UIFigure);
+            app.Image2.Position = [560 979 370 147];
+            app.Image2.ImageSource = fullfile(pathToMLAPP, 'rop Imgae.png');
+
+            % Create Image5_2
+            app.Image5_2 = uiimage(app.UIFigure);
+            app.Image5_2.Position = [584 196 280 109];
+            app.Image5_2.ImageSource = fullfile(pathToMLAPP, '24.png');
+
+            % Create Label_2
+            app.Label_2 = uilabel(app.UIFigure);
+            app.Label_2.FontSize = 100;
+            app.Label_2.FontColor = [0.0941 0.6118 0.7686];
+            app.Label_2.Position = [880 992 105 132];
+            app.Label_2.Text = '---';
+
+            % Create Label_3
+            app.Label_3 = uilabel(app.UIFigure);
+            app.Label_3.FontSize = 100;
+            app.Label_3.FontColor = [0.0941 0.6118 0.7686];
+            app.Label_3.Position = [498 994 105 132];
+            app.Label_3.Text = '---';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = app1
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            % Execute the startup function
+            runStartupFcn(app, @startupFcn)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
